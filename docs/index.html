@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NCM Converter - Web</title>
+    <style>
+        :root {
+            --bg: #1e1e1e;
+            --bg2: #252526;
+            --bg3: #2d2d2d;
+            --bg4: #3c3c3c;
+            --accent: #0e639c;
+            --accent2: #569cd6;
+            --text: #d4d4d4;
+            --text2: #808080;
+            --green: #4ec9b0;
+            --red: #f44747;
+            --yellow: #dcdcaa;
+        }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+        h1 {
+            color: var(--accent2);
+            margin-bottom: 5px;
+            font-weight: 600;
+            font-size: 24px;
+        }
+        .subtitle {
+            color: var(--text2);
+            font-size: 13px;
+            margin-bottom: 20px;
+        }
+        .container {
+            width: 100%;
+            max-width: 700px;
+        }
+        .drop-zone {
+            border: 2px dashed var(--bg4);
+            border-radius: 8px;
+            padding: 40px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: var(--bg2);
+            margin-bottom: 15px;
+        }
+        .drop-zone:hover, .drop-zone.drag-over {
+            border-color: var(--accent2);
+            background: var(--bg3);
+        }
+        .drop-zone-icon {
+            font-size: 48px;
+            margin-bottom: 10px;
+            opacity: 0.5;
+        }
+        .drop-zone-text {
+            color: var(--text2);
+            font-size: 14px;
+        }
+        .drop-zone-text span {
+            color: var(--accent2);
+            text-decoration: underline;
+            cursor: pointer;
+        }
+        .controls {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .control-group label {
+            color: var(--text2);
+            font-size: 13px;
+        }
+        select, button {
+            background: var(--bg3);
+            color: var(--text);
+            border: 1px solid var(--bg4);
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 13px;
+            cursor: pointer;
+            outline: none;
+        }
+        select:hover, button:hover {
+            border-color: var(--accent2);
+        }
+        button.primary {
+            background: var(--accent);
+            border-color: var(--accent);
+        }
+        button.primary:hover {
+            background: #1177bb;
+        }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .batch-progress {
+            margin-bottom: 15px;
+            display: none;
+        }
+        .batch-progress.active {
+            display: block;
+        }
+        .batch-info {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: var(--text2);
+            margin-bottom: 5px;
+        }
+        .progress-bar-bg {
+            height: 6px;
+            background: var(--bg4);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        .progress-bar-fill {
+            height: 100%;
+            background: var(--accent2);
+            border-radius: 3px;
+            transition: width 0.3s;
+            width: 0%;
+        }
+        .file-list {
+            background: var(--bg2);
+            border-radius: 8px;
+            overflow: hidden;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .file-list::-webkit-scrollbar {
+            width: 8px;
+        }
+        .file-list::-webkit-scrollbar-track {
+            background: var(--bg2);
+        }
+        .file-list::-webkit-scrollbar-thumb {
+            background: var(--bg4);
+            border-radius: 4px;
+        }
+        .file-item {
+            padding: 12px 15px;
+            border-bottom: 1px solid var(--bg3);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .file-item:last-child {
+            border-bottom: none;
+        }
+        .file-icon {
+            font-size: 20px;
+            width: 30px;
+            text-align: center;
+            flex-shrink: 0;
+        }
+        .file-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .file-name {
+            font-size: 13px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-bottom: 4px;
+        }
+        .file-progress {
+            height: 3px;
+            background: var(--bg4);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        .file-progress-fill {
+            height: 100%;
+            background: var(--accent2);
+            border-radius: 2px;
+            transition: width 0.3s;
+            width: 0%;
+        }
+        .file-progress-fill.done {
+            background: var(--green);
+        }
+        .file-progress-fill.error {
+            background: var(--red);
+        }
+        .file-status {
+            font-size: 11px;
+            color: var(--text2);
+            margin-top: 3px;
+        }
+        .file-status.done {
+            color: var(--green);
+        }
+        .file-status.error {
+            color: var(--red);
+        }
+        .file-size {
+            font-size: 11px;
+            color: var(--text2);
+            flex-shrink: 0;
+        }
+        .empty-state {
+            padding: 40px 20px;
+            text-align: center;
+            color: var(--text2);
+            font-size: 13px;
+        }
+        .credits {
+            margin-top: 20px;
+            font-size: 12px;
+            color: var(--text2);
+        }
+        .credits a {
+            color: var(--accent2);
+            text-decoration: none;
+        }
+        .credits a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>NCM Converter</h1>
+        <p class="subtitle">NetEase Cloud Music .ncm to mp3/flac</p>
+
+        <div class="drop-zone" id="dropZone">
+            <div class="drop-zone-icon">🎵</div>
+            <div class="drop-zone-text">
+                Drag & drop .ncm files here<br>
+                or <span id="browseBtn">browse files</span>
+            </div>
+        </div>
+        <input type="file" id="fileInput" accept=".ncm" multiple hidden>
+
+        <div class="controls">
+            <div class="control-group">
+                <label>Workers:</label>
+                <select id="workerCount">
+                    <option value="1">1</option>
+                    <option value="2" selected>2</option>
+                    <option value="3">3</option>
+                    <option value="4">4</option>
+                </select>
+            </div>
+            <button class="primary" id="convertBtn" disabled>Convert</button>
+            <button id="clearBtn" disabled>Clear</button>
+        </div>
+
+        <div class="batch-progress" id="batchProgress">
+            <div class="batch-info">
+                <span id="batchText">0 / 0</span>
+                <span id="batchPercent">0%</span>
+            </div>
+            <div class="progress-bar-bg">
+                <div class="progress-bar-fill" id="batchBar"></div>
+            </div>
+        </div>
+
+        <div class="file-list" id="fileList">
+            <div class="empty-state" id="emptyState">No files added</div>
+        </div>
+
+        <div class="credits">
+            by <a href="https://github.com/Nanawwa" target="_blank">Nanawwa</a>
+        </div>
+    </div>
+
+    <script>
+    const CORE_KEY = [0x68,0x7A,0x48,0x52,0x41,0x6D,0x73,0x6F,0x35,0x6B,0x49,0x6E,0x62,0x61,0x78,0x57];
+    const MOD_KEY = [0x23,0x31,0x34,0x6C,0x6A,0x6B,0x5F,0x21,0x5C,0x5D,0x26,0x30,0x55,0x3C,0x27,0x28];
+
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const browseBtn = document.getElementById('browseBtn');
+    const convertBtn = document.getElementById('convertBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const fileList = document.getElementById('fileList');
+    const emptyState = document.getElementById('emptyState');
+    const batchProgress = document.getElementById('batchProgress');
+    const batchText = document.getElementById('batchText');
+    const batchPercent = document.getElementById('batchPercent');
+    const batchBar = document.getElementById('batchBar');
+    const workerCountSelect = document.getElementById('workerCount');
+
+    let files = [];
+    let processing = false;
+
+    browseBtn.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', (e) => addFiles(e.target.files));
+    dropZone.addEventListener('click', (e) => { if (e.target === dropZone || e.target.classList.contains('drop-zone-icon') || e.target.classList.contains('drop-zone-text')) fileInput.click(); });
+
+    ['dragenter', 'dragover'].forEach(evt => {
+        dropZone.addEventListener(evt, (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+    });
+    ['dragleave', 'drop'].forEach(evt => {
+        dropZone.addEventListener(evt, (e) => { e.preventDefault(); dropZone.classList.remove('drag-over'); });
+    });
+    dropZone.addEventListener('drop', (e) => { addFiles(e.dataTransfer.files); });
+
+    function addFiles(fileListInput) {
+        for (const f of fileListInput) {
+            if (f.name.toLowerCase().endsWith('.ncm') && !files.find(x => x.name === f.name && x.size === f.size)) {
+                files.push(f);
+            }
+        }
+        fileInput.value = '';
+        renderFiles();
+    }
+
+    function renderFiles() {
+        fileList.innerHTML = '';
+        if (files.length === 0) {
+            fileList.innerHTML = '<div class="empty-state">No files added</div>';
+            convertBtn.disabled = true;
+            clearBtn.disabled = true;
+            batchProgress.classList.remove('active');
+            return;
+        }
+        convertBtn.disabled = processing;
+        clearBtn.disabled = processing;
+        files.forEach((f, i) => {
+            const item = document.createElement('div');
+            item.className = 'file-item';
+            item.id = 'file-' + i;
+            item.innerHTML = `
+                <div class="file-icon">🎵</div>
+                <div class="file-info">
+                    <div class="file-name">${escHtml(f.name)}</div>
+                    <div class="file-progress"><div class="file-progress-fill" id="bar-${i}"></div></div>
+                    <div class="file-status" id="status-${i}">Waiting</div>
+                </div>
+                <div class="file-size">${formatSize(f.size)}</div>
+            `;
+            fileList.appendChild(item);
+        });
+    }
+
+    function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    function formatSize(b) { if (b < 1024) return b + ' B'; if (b < 1048576) return (b/1024).toFixed(1) + ' KB'; return (b/1048576).toFixed(1) + ' MB'; }
+
+    clearBtn.addEventListener('click', () => { files = []; renderFiles(); });
+    convertBtn.addEventListener('click', startConvert);
+
+    async function startConvert() {
+        if (processing || files.length === 0) return;
+        processing = true;
+        convertBtn.disabled = true;
+        clearBtn.disabled = true;
+        batchProgress.classList.add('active');
+
+        const workers = parseInt(workerCountSelect.value);
+        const total = files.length;
+        let done = 0;
+
+        function updateBatch() {
+            batchText.textContent = `${done} / ${total}`;
+            batchPercent.textContent = Math.round(done / total * 100) + '%';
+            batchBar.style.width = (done / total * 100) + '%';
+        }
+        updateBatch();
+
+        const queue = [...files.keys()];
+        async function worker() {
+            while (queue.length > 0) {
+                const idx = queue.shift();
+                try {
+                    setFileStatus(idx, 'Processing...', 10);
+                    const buf = await files[idx].arrayBuffer();
+                    const result = await decryptNCM(new Uint8Array(buf), (pct) => setFileStatus(idx, 'Decrypting... ' + pct + '%', pct));
+                    setFileStatus(idx, 'Done', 100, true);
+                    downloadFile(result.data, result.filename);
+                } catch (e) {
+                    setFileStatus(idx, 'Error: ' + e.message, 0, false, true);
+                }
+                done++;
+                updateBatch();
+            }
+        }
+
+        const ps = [];
+        for (let i = 0; i < workers; i++) ps.push(worker());
+        await Promise.all(ps);
+
+        processing = false;
+        convertBtn.disabled = false;
+        clearBtn.disabled = false;
+    }
+
+    function setFileStatus(idx, text, pct, done, error) {
+        const bar = document.getElementById('bar-' + idx);
+        const status = document.getElementById('status-' + idx);
+        if (bar) { bar.style.width = pct + '%'; if (done) bar.classList.add('done'); if (error) bar.classList.add('error'); }
+        if (status) { status.textContent = text; if (done) status.classList.add('done'); if (error) status.classList.add('error'); }
+    }
+
+    function downloadFile(data, name) {
+        const blob = new Blob([data]);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = name;
+        document.body.appendChild(a); a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+
+    async function decryptNCM(data, onProgress) {
+        const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+        if (view.getUint32(0, true) !== 0x4e455443 || view.getUint32(4, true) !== 0x4d414446) {
+            throw new Error('Not a valid NCM file');
+        }
+
+        const keyDataLen = view.getUint32(8, true);
+        const keyData = new Uint8Array(data.buffer, data.byteOffset + 12, keyDataLen);
+        for (let i = 0; i < keyDataLen; i++) keyData[i] ^= 0x64;
+
+        const coreKeyBuf = new Uint8Array(CORE_KEY).buffer;
+        const modKeyBuf = new Uint8Array(MOD_KEY).buffer;
+
+        const aesCore = await crypto.subtle.importKey('raw', coreKeyBuf, 'AES-ECB', false, ['decrypt']);
+        const aesMod = await crypto.subtle.importKey('raw', modKeyBuf, 'AES-ECB', false, ['decrypt']);
+
+        let decryptedKeyData;
+        try {
+            decryptedKeyData = new Uint8Array(await crypto.subtle.decrypt('AES-ECB', aesCore, keyData));
+        } catch { throw new Error('Invalid key data'); }
+        const keyLen = decryptedKeyData[0];
+        const musicKeyRaw = decryptedKeyData.slice(1, 1 + keyLen);
+
+        onProgress(30);
+
+        let offset = 12 + keyDataLen;
+        const metaLen = view.getUint32(offset, true);
+        offset += 4;
+        let metadata = null;
+
+        if (metaLen > 0) {
+            const metaEnc = new Uint8Array(data.buffer, data.byteOffset + offset, metaLen);
+            offset += metaLen;
+            for (let i = 0; i < metaEnc.length; i++) metaEnc[i] ^= 0x63;
+            const metaBase64 = arrayBufferToBase64(metaEnc.slice(22));
+            const metaDecBuf = await crypto.subtle.decrypt('AES-ECB', aesMod, base64ToArrayBuffer(metaBase64));
+            const metaDec = new Uint8Array(metaDecBuf).slice(6);
+            metadata = JSON.parse(new TextDecoder().decode(metaDec));
+        }
+
+        onProgress(40);
+
+        offset += 5;
+
+        const coverFrameLen = view.getUint32(offset, true);
+        offset += 4;
+        const imgLen = view.getUint32(offset, true);
+        offset += 4;
+        let imgData = null;
+        if (imgLen > 0) {
+            imgData = new Uint8Array(data.buffer, data.byteOffset + offset, imgLen);
+            offset += imgLen;
+        } else {
+            offset += coverFrameLen - 4;
+        }
+
+        onProgress(60);
+
+        const keyBox = buildKeyBox(musicKeyRaw);
+        const audioData = data.slice(offset);
+
+        onProgress(70);
+
+        const result = new Uint8Array(audioData.length);
+        for (let i = 0; i < audioData.length; i++) {
+            const j = (i + 1) & 0xff;
+            result[i] = audioData[i] ^ keyBox[(keyBox[j] + keyBox[(keyBox[j] + j) & 0xff]) & 0xff];
+        }
+
+        onProgress(90);
+
+        let format = 'mp3';
+        if (result.length > 4) {
+            if (result[0] === 0xFF && (result[1] & 0xE0) === 0xE0) format = 'mp3';
+            else if (result[0] === 0x66 && result[1] === 0x4C && result[2] === 0x61 && result[3] === 0x43) format = 'flac';
+        }
+
+        let filename;
+        if (metadata && metadata.musicName) {
+            const artists = (metadata.artist || []).map(a => a[0]).join(', ');
+            filename = metadata.musicName + (artists ? ' - ' + artists : '') + '.' + format;
+        } else {
+            filename = 'output.' + format;
+        }
+
+        let finalData;
+        if (format === 'flac' && imgData) {
+            finalData = mergeFlacWithImage(result, imgData);
+        } else if (format === 'mp3' && imgData) {
+            finalData = mergeMp3WithImage(result, imgData, metadata);
+        } else {
+            finalData = result;
+        }
+
+        onProgress(100);
+        return { data: finalData, filename };
+    }
+
+    function buildKeyBox(key) {
+        const kb = new Uint8Array(256);
+        for (let i = 0; i < 256; i++) kb[i] = i;
+        let lastByte = 0, keyOffset = 0;
+        for (let i = 0; i < 256; i++) {
+            const swap = kb[i];
+            const c = (swap + lastByte + key[keyOffset++]) & 0xff;
+            if (keyOffset >= key.length) keyOffset = 0;
+            kb[i] = kb[c];
+            kb[c] = swap;
+            lastByte = c;
+        }
+        return kb;
+    }
+
+    function arrayBufferToBase64(buf) {
+        let bytes = new Uint8Array(buf);
+        let binary = '';
+        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+        return btoa(binary);
+    }
+
+    function base64ToArrayBuffer(b64) {
+        const bin = atob(b64);
+        const buf = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+        return buf.buffer;
+    }
+
+    function mergeFlacWithImage(flacData, imgData) {
+        const metadataBlockType = 0x06;
+        const pictureType = 0x03;
+        const mimeType = 'image/jpeg';
+        const desc = '';
+        const width = 0, height = 0, colorDepth = 0, numColors = 0;
+
+        const encoder = new TextEncoder();
+        const mimeTypeBytes = encoder.encode(mimeType);
+        const descBytes = encoder.encode(desc);
+        const pictureDataLength = 4 + 4 + mimeTypeBytes.length + descBytes.length + 16 + imgData.length;
+
+        const metadataBlockHeader = ((metadataBlockType << 1) | 0) << 24 | pictureDataLength;
+
+        const block = new Uint8Array(4 + pictureDataLength);
+        const dv = new DataView(block.buffer);
+        dv.setUint32(0, metadataBlockHeader >>> 0);
+        let off = 4;
+        dv.setUint32(off, pictureType); off += 4;
+        dv.setUint32(off, mimeTypeBytes.length); off += 4;
+        block.set(mimeTypeBytes, off); off += mimeTypeBytes.length;
+        dv.setUint32(off, descBytes.length); off += 4;
+        block.set(descBytes, off); off += descBytes.length;
+        dv.setUint32(off, width); off += 4;
+        dv.setUint32(off, height); off += 4;
+        dv.setUint32(off, colorDepth); off += 4;
+        dv.setUint32(off, numColors); off += 4;
+        dv.setUint32(off, imgData.length); off += 4;
+        block.set(imgData, off);
+
+        const magic = flacData.slice(0, 4);
+        const rest = flacData.slice(4);
+        const out = new Uint8Array(magic.length + block.length + rest.length);
+        out.set(magic, 0);
+        out.set(block, magic.length);
+        out.set(rest, magic.length + block.length);
+        return out;
+    }
+
+    function mergeMp3WithImage(mp3Data, imgData, metadata) {
+        const encoder = new TextEncoder();
+        const frames = [];
+
+        function makeTextFrame(id, text) {
+            const textBytes = encoder.encode(text);
+            const data = new Uint8Array(textBytes.length + 1);
+            data[0] = 0x03;
+            data.set(textBytes, 1);
+            const frameSize = data.length + 1;
+            const header = new Uint8Array(10);
+            const hdv = new DataView(header.buffer);
+            hdv.setUint8(0, id.charCodeAt(0));
+            hdv.setUint8(1, id.charCodeAt(1));
+            hdv.setUint8(2, id.charCodeAt(2));
+            hdv.setUint8(3, id.charCodeAt(3));
+            hdv.setUint32(4, frameSize);
+            header[6] = 0;
+            const frame = new Uint8Array(header.length + data.length);
+            frame.set(header, 0);
+            frame.set(data, 10);
+            return frame;
+        }
+
+        if (metadata) {
+            if (metadata.musicName) frames.push(makeTextFrame('TIT2', metadata.musicName));
+            if (metadata.artist) frames.push(makeTextFrame('TPE1', metadata.artist.map(a => a[0]).join('/')));
+            if (metadata.albumName) frames.push(makeTextFrame('TALB', metadata.albumName));
+            if (metadata.format) frames.push(makeTextFrame('TCON', metadata.format.toUpperCase()));
+        }
+
+        const picData = new Uint8Array(6 + imgData.length);
+        const pdv = new DataView(picData.buffer);
+        pdv.setUint8(0, 0x03);
+        pdv.setUint32(1, imgData.length);
+        picData.set(imgData, 5);
+
+        const picFrameSize = picData.length;
+        const picHeader = new Uint8Array(10);
+        const phdv = new DataView(picHeader.buffer);
+        phdv.setUint8(0, 0x41); phdv.setUint8(1, 0x50); phdv.setUint8(2, 0x49); phdv.setUint8(3, 0x43);
+        phdv.setUint32(4, picFrameSize);
+        const picFrame = new Uint8Array(10 + picData.length);
+        picFrame.set(picHeader, 0);
+        picFrame.set(picData, 10);
+        frames.push(picFrame);
+
+        let totalSize = 0;
+        frames.forEach(f => totalSize += f.length);
+
+        let id3Size = 0;
+        let tmp = totalSize;
+        const sizeBytes = new Uint8Array(4);
+        for (let i = 3; i >= 0; i--) {
+            sizeBytes[i] = tmp & 0x7F;
+            tmp = tmp >> 7;
+        }
+
+        const id3Header = new Uint8Array(10);
+        id3Header[0] = 0x49; id3Header[1] = 0x44; id3Header[2] = 0x33;
+        id3Header[3] = 3; id3Header[4] = 0;
+        id3Header[5] = 0;
+        id3Header.set(sizeBytes, 6);
+
+        let firstFrame = true;
+        let id3End = 0;
+        for (let i = 0; i < mp3Data.length - 3; i++) {
+            if (mp3Data[i] === 0xFF && (mp3Data[i+1] & 0xE0) === 0xE0) {
+                id3End = i;
+                break;
+            }
+        }
+        if (id3End === 0) id3End = mp3Data.length;
+
+        const out = new Uint8Array(10 + totalSize + mp3Data.length - id3End);
+        let off = 0;
+        out.set(id3Header, off); off += 10;
+        frames.forEach(f => { out.set(f, off); off += f.length; });
+        out.set(mp3Data.slice(id3End), off);
+        return out;
+    }
+    </script>
+</body>
+</html>
