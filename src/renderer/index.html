@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'">
+  <title>NCM转换器</title>
+  <style>
+    :root {
+      --bg-primary: #1e1e1e;
+      --bg-secondary: #252526;
+      --bg-tertiary: #2d2d2d;
+      --bg-hover: #2a2d2e;
+      --border: #3c3c3c;
+      --border-focus: #007acc;
+      --text-primary: #e0e0e0;
+      --text-secondary: #cccccc;
+      --text-muted: #888888;
+      --text-dim: #666666;
+      --accent: #0e639c;
+      --accent-hover: #1177bb;
+      --accent-light: #569cd6;
+      --success: #388a34;
+      --success-hover: #4caf50;
+      --error: #f44747;
+      --warning: #dcdcaa;
+      --done: #6a9955;
+      --radius: 8px;
+      --radius-sm: 6px;
+      --radius-xs: 4px;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html { font-size: 15px; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-secondary);
+      min-height: 100vh;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      user-select: none;
+      overflow: hidden;
+      -webkit-app-region: no-drag;
+    }
+
+    /* ===== SVG icon base ===== */
+    .icon-svg {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .icon-svg svg {
+      display: block;
+    }
+
+    /* ===== Title Bar ===== */
+    .titlebar {
+      height: 38px;
+      min-height: 38px;
+      background: var(--bg-secondary);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      -webkit-app-region: drag;
+      border-bottom: 1px solid var(--bg-primary);
+    }
+
+    .titlebar-title {
+      font-size: 0.8rem;
+      color: var(--text-dim);
+      letter-spacing: 0.3px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .titlebar-title .dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 6px rgba(14,99,156,0.4);
+    }
+
+    /* ===== Window Controls ===== */
+    .titlebar-controls {
+      display: flex;
+      gap: 1px;
+      -webkit-app-region: no-drag;
+    }
+
+    .win-btn {
+      width: 36px;
+      height: 30px;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s, color 0.15s;
+    }
+
+    .win-btn:hover { background: #3c3c3c; color: var(--text-primary); }
+    .win-btn:active { background: #555; }
+    .win-btn.close:hover { background: var(--error); color: #fff; }
+    .win-btn svg { width: 14px; height: 14px; }
+
+    /* ===== Header ===== */
+    .header {
+      background: var(--bg-secondary);
+      padding: 12px 20px;
+      border-bottom: 1px solid var(--bg-primary);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .header-logo {
+      width: 30px;
+      height: 30px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-light));
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      box-shadow: 0 2px 8px rgba(14,99,156,0.3);
+    }
+
+    .header-logo svg { width: 18px; height: 18px; color: #fff; }
+
+    .header h1 {
+      font-size: 1rem;
+      font-weight: 500;
+      color: var(--text-primary);
+      letter-spacing: 0.3px;
+    }
+
+    .header h1 span { color: var(--accent-light); font-weight: 600; }
+
+    .header-actions { display: flex; gap: 8px; }
+
+    /* ===== Buttons ===== */
+    .btn {
+      padding: 6px 16px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--bg-tertiary);
+      color: var(--text-secondary);
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      line-height: 1.4;
+      white-space: nowrap;
+      touch-action: manipulation;
+    }
+
+    .btn:hover {
+      background: var(--border);
+      border-color: var(--accent-light);
+      color: var(--text-primary);
+    }
+
+    .btn:active { background: #094771; transform: scale(0.97); }
+
+    .btn-primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+      font-weight: 500;
+    }
+
+    .btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: #fff; }
+    .btn-primary:active { background: #094771; transform: scale(0.97); }
+
+    .btn-primary:disabled {
+      background: var(--border);
+      border-color: var(--border);
+      color: var(--text-dim);
+      cursor: default;
+      transform: none;
+    }
+
+    .btn-success {
+      background: var(--success);
+      border-color: var(--success);
+      color: #fff;
+    }
+
+    .btn-success:hover { background: var(--success-hover); border-color: var(--success-hover); color: #fff; }
+
+    /* ===== Main ===== */
+    .main {
+      flex: 1;
+      padding: 14px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      overflow: hidden;
+      min-height: 0;
+    }
+
+    /* ===== Drop Zone ===== */
+    .drop-zone {
+      border: 1.5px dashed var(--border);
+      border-radius: var(--radius);
+      padding: clamp(20px, 4vh, 32px);
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      background: var(--bg-primary);
+      flex-shrink: 0;
+    }
+
+    .drop-zone:hover { border-color: var(--accent); background: var(--bg-secondary); }
+    .drop-zone.dragover { border-color: var(--accent-light); background: rgba(14,99,156,0.15); border-style: solid; }
+
+    .drop-zone-icon {
+      margin-bottom: 8px;
+      opacity: 0.5;
+    }
+
+    .drop-zone-icon svg {
+      width: 40px;
+      height: 40px;
+      color: var(--accent-light);
+    }
+
+    .drop-zone-text {
+      font-size: 0.85rem;
+      color: var(--text-dim);
+      line-height: 2;
+    }
+
+    .drop-zone-text span {
+      color: var(--accent-light);
+      cursor: pointer;
+      text-decoration: none;
+      font-weight: 500;
+    }
+
+    .drop-zone-text span:hover { text-decoration: underline; color: #4fc1ff; }
+
+    /* ===== Settings ===== */
+    .settings {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      flex-shrink: 0;
+    }
+
+    .settings label {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    .settings .input-group {
+      display: flex;
+      align-items: center;
+      flex: 1;
+      min-width: 140px;
+    }
+
+    .settings input[type="text"] {
+      flex: 1;
+      min-width: 0;
+      padding: 6px 10px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--border);
+      color: var(--text-secondary);
+      font-size: 0.8rem;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    .settings input[type="text"]:focus { border-color: var(--border-focus); }
+    .settings input[type="text"]::placeholder { color: var(--text-dim); }
+
+    .settings select {
+      padding: 6px 8px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--border);
+      color: var(--text-secondary);
+      font-size: 0.8rem;
+      outline: none;
+      cursor: pointer;
+      transition: border-color 0.15s;
+    }
+
+    .settings select:focus { border-color: var(--border-focus); }
+
+    /* ===== File List ===== */
+    .file-list {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      border: 1px solid var(--bg-secondary);
+      border-radius: var(--radius);
+      background: var(--bg-primary);
+    }
+
+    .file-list::-webkit-scrollbar { width: 6px; }
+    .file-list::-webkit-scrollbar-track { background: transparent; }
+    .file-list::-webkit-scrollbar-thumb { background: #424242; border-radius: 3px; }
+    .file-list::-webkit-scrollbar-thumb:hover { background: #555; }
+
+    .file-list:empty::before {
+      content: '拖入 NCM 文件或点击上方选择';
+      display: block;
+      text-align: center;
+      padding: clamp(28px, 8vh, 56px) 20px;
+      color: var(--text-dim);
+      font-size: 0.85rem;
+    }
+
+    .file-item {
+      display: flex;
+      align-items: center;
+      padding: 7px 14px;
+      border-bottom: 1px solid var(--bg-secondary);
+      gap: 10px;
+      font-size: 0.85rem;
+      transition: background 0.1s;
+    }
+
+    .file-item:hover { background: var(--bg-hover); }
+
+    .file-item .icon-svg {
+      width: 16px;
+      height: 16px;
+      opacity: 0.5;
+      flex-shrink: 0;
+    }
+
+    .file-item .icon-svg svg { width: 16px; height: 16px; color: var(--accent-light); }
+
+    .file-item .name {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--text-secondary);
+    }
+
+    .file-item .progress-bar {
+      width: clamp(56px, 8vw, 90px);
+      height: 4px;
+      background: #333;
+      border-radius: 2px;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    .file-item .progress-fill {
+      height: 100%;
+      background: var(--accent);
+      transition: width 0.3s;
+      border-radius: 2px;
+    }
+
+    .file-item .status {
+      width: 52px;
+      text-align: right;
+      font-size: 0.75rem;
+      flex-shrink: 0;
+    }
+
+    .status-pending { color: var(--text-dim); }
+    .status-converting { color: var(--warning); }
+    .status-done { color: var(--done); }
+    .status-error { color: var(--error); }
+
+    /* ===== Batch Progress ===== */
+    .batch-progress {
+      background: var(--bg-secondary);
+      border-radius: var(--radius);
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    .batch-progress-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 12px;
+    }
+
+    .batch-progress-label {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    .batch-progress-pct {
+      font-size: 0.8rem;
+      color: var(--accent-light);
+      font-weight: 500;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .batch-progress-track {
+      height: 3px;
+      background: #333;
+    }
+
+    .batch-progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), var(--accent-light));
+      transition: width 0.4s ease;
+    }
+
+    /* ===== Footer ===== */
+    .footer {
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-top: 1px solid var(--bg-secondary);
+      background: var(--bg-secondary);
+      flex-shrink: 0;
+    }
+
+    .stats {
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      margin-left: auto;
+    }
+
+    /* ===== Credits ===== */
+    .credits {
+      font-size: 0.6rem;
+      color: #2a2a2a;
+      text-align: right;
+      padding: 2px 14px;
+      background: var(--bg-secondary);
+      line-height: 1.2;
+    }
+
+    .credits span { color: #333; }
+
+    /* ===== Responsive ===== */
+    @media (max-width: 480px) {
+      html { font-size: 14px; }
+      .header { padding: 10px 14px; }
+      .main { padding: 10px 12px; gap: 10px; }
+      .settings { flex-direction: column; align-items: stretch; }
+      .settings .input-group { min-width: 0; }
+      .file-item .progress-bar { width: 44px; }
+      .file-item .status { width: 42px; font-size: 0.7rem; }
+      .header-actions { width: 100%; }
+      .header-actions .btn { flex: 1; }
+    }
+
+    @media (max-width: 360px) { html { font-size: 13px; } }
+
+    @media (min-width: 1200px) {
+      .main { padding: 18px 28px; max-width: 1000px; margin: 0 auto; width: 100%; }
+      .file-item { padding: 8px 16px; }
+    }
+
+    @media (hover: none) and (pointer: coarse) {
+      .btn { padding: 10px 18px; min-height: 40px; }
+      .file-item { padding: 10px 14px; }
+      .drop-zone { padding: 28px; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="titlebar">
+    <div class="titlebar-title">
+      <span class="dot"></span>
+      NCM 转换器
+    </div>
+    <div class="titlebar-controls">
+      <button class="win-btn" id="btnMinimize">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="3" y1="8" x2="13" y2="8"/></svg>
+      </button>
+      <button class="win-btn" id="btnMaximize">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="10" height="10" rx="1"/></svg>
+      </button>
+      <button class="win-btn close" id="btnClose">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="header">
+    <div class="header-left">
+      <div class="header-logo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 18V5l12-2v13"/>
+          <circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+        </svg>
+      </div>
+      <h1><span>NCM</span> → 原始格式</h1>
+    </div>
+    <div class="header-actions">
+      <button class="btn" id="selectFilesBtn">选择文件</button>
+      <button class="btn" id="selectFolderBtn">选择文件夹</button>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="drop-zone" id="dropZone">
+      <div class="drop-zone-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+          <line x1="12" y1="11" x2="12" y2="17"/><polyline points="9 14 12 11 15 14"/>
+        </svg>
+      </div>
+      <div class="drop-zone-text">
+        拖拽 NCM 文件到此处<br>
+        <span id="dropSelectBtn">选择文件</span> / <span id="dropFolderBtn">选择文件夹</span>
+      </div>
+    </div>
+
+    <div class="settings">
+      <label>输出:</label>
+      <div class="input-group">
+        <input type="text" id="outputDir" placeholder="默认与源文件相同目录">
+        <button class="btn" id="selectOutputBtn" style="margin-left:6px">浏览</button>
+      </div>
+      <label>并发:</label>
+      <select id="concurrency">
+        <option value="1">1</option>
+        <option value="2" selected>2</option>
+        <option value="3">3</option>
+        <option value="4">4</option>
+        <option value="5">5</option>
+        <option value="6">6</option>
+        <option value="7">7</option>
+        <option value="8">8</option>
+      </select>
+    </div>
+
+    <div class="file-list" id="fileList"></div>
+  </div>
+
+  <div class="batch-progress" id="batchProgress" style="display:none">
+    <div class="batch-progress-header">
+      <span class="batch-progress-label" id="batchLabel">准备中...</span>
+      <span class="batch-progress-pct" id="batchPct">0%</span>
+    </div>
+    <div class="batch-progress-track">
+      <div class="batch-progress-fill" id="batchFill" style="width:0%"></div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <button class="btn btn-primary" id="startBtn" disabled>开始转换</button>
+    <button class="btn btn-success" id="openOutputBtn" style="display:none">打开输出目录</button>
+    <div class="stats" id="stats"></div>
+  </div>
+
+  <div class="credits">by <span>Nanawwa</span></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
