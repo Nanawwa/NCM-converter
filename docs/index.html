@@ -440,12 +440,12 @@
         const coreKeyBuf = new Uint8Array(CORE_KEY).buffer;
         const modKeyBuf = new Uint8Array(MOD_KEY).buffer;
 
-        const aesCore = await crypto.subtle.importKey('raw', coreKeyBuf, 'AES-ECB', false, ['decrypt']);
-        const aesMod = await crypto.subtle.importKey('raw', modKeyBuf, 'AES-ECB', false, ['decrypt']);
+        const aesCore = await crypto.subtle.importKey('raw', coreKeyBuf, {name:"AES-ECB"}, false, ['decrypt']);
+        const aesMod = await crypto.subtle.importKey('raw', modKeyBuf, {name:"AES-ECB"}, false, ['decrypt']);
 
         let decryptedKeyData;
         try {
-            decryptedKeyData = new Uint8Array(await crypto.subtle.decrypt('AES-ECB', aesCore, keyData));
+            decryptedKeyData = new Uint8Array(await crypto.subtle.decrypt({name:"AES-ECB"}, aesCore, keyData));
         } catch { throw new Error('Invalid key data'); }
         const keyLen = decryptedKeyData[0];
         const musicKeyRaw = decryptedKeyData.slice(1, 1 + keyLen);
@@ -462,7 +462,7 @@
             offset += metaLen;
             for (let i = 0; i < metaEnc.length; i++) metaEnc[i] ^= 0x63;
             const metaBase64 = arrayBufferToBase64(metaEnc.slice(22));
-            const metaDecBuf = await crypto.subtle.decrypt('AES-ECB', aesMod, base64ToArrayBuffer(metaBase64));
+            const metaDecBuf = await crypto.subtle.decrypt({name:"AES-ECB"}, aesMod, base64ToArrayBuffer(metaBase64));
             const metaDec = new Uint8Array(metaDecBuf).slice(6);
             metadata = JSON.parse(new TextDecoder().decode(metaDec));
         }
