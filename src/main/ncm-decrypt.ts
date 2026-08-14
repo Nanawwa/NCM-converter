@@ -1,22 +1,27 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
-import { NCMFileInfo } from '../shared/types';
+import { NCMFileInfo, AudioFormat } from '../shared/types';
+import { embedTags } from './tags';
 
 // Correct keys from ncmdump reference implementation (taurusxin/ncmdump)
-const CORE_KEY = Buffer.from([0x68, 0x7A, 0x48, 0x52, 0x41, 0x6D, 0x73, 0x6F, 0x35, 0x6B, 0x49, 0x6E, 0x62, 0x61, 0x78, 0x57]);
-const MOD_KEY = Buffer.from([0x23, 0x31, 0x34, 0x6C, 0x6A, 0x6B, 0x5F, 0x21, 0x5C, 0x5D, 0x26, 0x30, 0x55, 0x3C, 0x27, 0x28]);
+const CORE_KEY = Buffer.from([0x68, 0x7a, 0x48, 0x52, 0x41, 0x6d, 0x73, 0x6f, 0x35, 0x6b, 0x49, 0x6e, 0x62, 0x61, 0x78, 0x57]);
+const MOD_KEY = Buffer.from([0x23, 0x31, 0x34, 0x6c, 0x6a, 0x6b, 0x5f, 0x21, 0x5c, 0x5d, 0x26, 0x30, 0x55, 0x3c, 0x27, 0x28]);
 
-// PKCS7 unpadding for AES-ECB
+/**
+ * AES-128-ECB 解密,与 ncmdump 参考实现行为一致:
+ * 只处理完整的 16 字节块,尾部不足一块的数据忽略;PKCS7 填充字节 >16 时视为无填充。
+ * (Node 默认的 final() 在输入不是 16 的倍数时会直接抛错,导致个别文件转换失败)
+ */
 function aesEcbDecrypt(key: Buffer, data: Buffer): Buffer {
+  const blockLen = data.length & ~15;
+  if (blockLen === 0) return Buffer.alloc(0);
   const decipher = crypto.createDecipheriv('aes-128-ecb', key, null);
-  const decrypted = Buffer.concat([decipher.update(data), decipher.final()]);
-  // PKCS7 unpad: last byte tells how many bytes to remove
+  decipher.setAutoPadding(false);
+  const decrypted = Buffer.concat([decipher.update(data.subarray(0, blockLen)), decipher.final()]);
   const pad = decrypted[decrypted.length - 1];
-  if (pad > 0 && pad <= 16) {
-    return decrypted.slice(0, decrypted.length - pad);
-  }
-  return decrypted;
+  const drop = pad > 0 && pad <= 16 ? pad : 0;
+  return decrypted.slice(0, decrypted.length - drop);
 }
 
 // RC4 KSA - builds the key box used for audio decryption
@@ -42,110 +47,131 @@ function buildKeyBox(key: Buffer): Uint8Array {
   return keyBox;
 }
 
-// Base64 decode helper
-function base64Decode(input: string): Buffer {
-  return Buffer.from(input, 'base64');
+// 从音频数据头部探测真实格式
+function detectFormat(buf: Buffer): AudioFormat {
+  if (buf.length >= 3 && buf[0] === 0x49 && buf[1] === 0x44 && buf[2] === 0x33) return 'mp3'; // ID3
+  if (buf.length >= 4 && buf[0] === 0x66 && buf[1] === 0x4c && buf[2] === 0x61 && buf[3] === 0x43) return 'flac'; // fLaC
+  if (buf.length >= 4 && buf[0] === 0x4f && buf[1] === 0x67 && buf[2] === 0x67 && buf[3] === 0x53) return 'ogg'; // OggS
+  if (
+    buf.length >= 12 &&
+    buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46 &&
+    buf[8] === 0x57 && buf[9] === 0x41 && buf[10] === 0x56 && buf[11] === 0x45
+  ) return 'wav'; // RIFF....WAVE
+  if (buf.length >= 4 && buf[0] === 0x4d && buf[1] === 0x41 && buf[2] === 0x43 && buf[3] === 0x20) return 'ape'; // MAC 
+  if (
+    buf.length >= 16 &&
+    buf[0] === 0x30 && buf[1] === 0x26 && buf[2] === 0xb2 && buf[3] === 0x75 &&
+    buf[4] === 0x8e && buf[5] === 0x66 && buf[6] === 0xcf && buf[7] === 0x11
+  ) return 'wma'; // ASF GUID
+  if (buf.length >= 12 && buf[4] === 0x66 && buf[5] === 0x74 && buf[6] === 0x79 && buf[7] === 0x70) return 'm4a'; // ....ftyp
+  if (buf.length >= 2 && buf[0] === 0xff && (buf[1] & 0xf6) === 0xf0) return 'aac'; // ADTS
+  if (buf.length >= 2 && buf[0] === 0xff && (buf[1] & 0xe0) === 0xe0) return 'mp3'; // MPEG sync
+  return 'unknown';
 }
 
-export async function parseNCM(filePath: string): Promise<NCMFileInfo> {
+const FORMAT_EXT: Record<AudioFormat, string> = {
+  mp3: 'mp3',
+  flac: 'flac',
+  ogg: 'ogg',
+  wav: 'wav',
+  ape: 'ape',
+  wma: 'wma',
+  m4a: 'm4a',
+  aac: 'aac',
+  unknown: 'bin',
+};
+
+export async function parseNCM(
+  filePath: string,
+  onProgress?: (ratio: number) => void
+): Promise<NCMFileInfo> {
   const fd = fs.openSync(filePath, 'r');
+  const report = (r: number) => onProgress?.(Math.max(0, Math.min(1, r)));
 
   try {
-    // Step 1: Check magic header (8 bytes)
+    // 1. 校验魔数(8 字节)
     const magic = Buffer.alloc(8);
     fs.readSync(fd, magic, 0, 8, 0);
-
-    // Reference reads as two uint32 LE: 0x4e455443 and 0x4d414446
-    const header1 = magic.readUInt32LE(0);
-    const header2 = magic.readUInt32LE(4);
-    if (header1 !== 0x4e455443 || header2 !== 0x4d414446) {
-      throw new Error('Not a valid NCM file');
+    if (magic.readUInt32LE(0) !== 0x4e455443 || magic.readUInt32LE(4) !== 0x4d414446) {
+      throw new Error('不是有效的 NCM 文件');
     }
 
-    let offset = 10; // skip 2 bytes after magic (reference: seekg(2, cur))
+    let offset = 10; // 魔数后跳过 2 字节
+    report(0.02);
 
-    // Step 2: Read key data
+    // 2. 密钥
     const keyLenBuf = Buffer.alloc(4);
     fs.readSync(fd, keyLenBuf, 0, 4, offset);
     offset += 4;
     const keyLen = keyLenBuf.readUInt32LE(0);
-
-    if (keyLen <= 0) {
-      throw new Error('Broken NCM file: invalid key length');
+    if (keyLen <= 0 || keyLen > 1024 * 1024) {
+      throw new Error('文件损坏:密钥长度非法');
     }
 
     const keyData = Buffer.alloc(keyLen);
     fs.readSync(fd, keyData, 0, keyLen, offset);
     offset += keyLen;
+    for (let i = 0; i < keyLen; i++) keyData[i] ^= 0x64;
+    report(0.05);
 
-    // Step 3: XOR key data with 0x64 BEFORE AES decryption
-    for (let i = 0; i < keyLen; i++) {
-      keyData[i] ^= 0x64;
-    }
-
-    // Step 4: AES-ECB decrypt with CORE_KEY
     const decryptedKeyData = aesEcbDecrypt(CORE_KEY, keyData);
-
-    // Step 5: Build key box from decrypted key, skipping first 17 bytes
+    if (decryptedKeyData.length <= 17) {
+      throw new Error('文件损坏:无法解析密钥');
+    }
     const keyBox = buildKeyBox(Buffer.from(decryptedKeyData.slice(17)));
+    report(0.08);
 
-    // Step 6: Read metadata
+    // 3. 元数据
     const metaLenBuf = Buffer.alloc(4);
     fs.readSync(fd, metaLenBuf, 0, 4, offset);
     offset += 4;
     const metaLen = metaLenBuf.readUInt32LE(0);
 
-    let songName = path.basename(filePath, '.ncm');
-    let artist = '未知艺术家';
-    let album = '未知专辑';
+    let songName = '';
+    let artist = '';
+    let album = '';
+    let metaFormat: string | undefined;
 
-    if (metaLen > 0) {
+    if (metaLen > 0 && metaLen < 16 * 1024 * 1024) {
       const metaData = Buffer.alloc(metaLen);
       fs.readSync(fd, metaData, 0, metaLen, offset);
       offset += metaLen;
+      for (let i = 0; i < metaLen; i++) metaData[i] ^= 0x63;
 
-      // Step 7: XOR metadata with 0x63
-      for (let i = 0; i < metaLen; i++) {
-        metaData[i] ^= 0x63;
-      }
-
-      // Step 8: Skip first 22 bytes ("163 key(Don't modify):"), then Base64 decode
       const base64Data = metaData.slice(22).toString('utf8').replace(/\0+$/, '');
-      const decodedData = base64Decode(base64Data);
-
-      // Step 9: AES-ECB decrypt with MOD_KEY
+      const decodedData = Buffer.from(base64Data, 'base64');
       const decryptedMeta = aesEcbDecrypt(MOD_KEY, decodedData);
-
-      // Step 10: Skip first 6 bytes ("music:")
       const metaStr = decryptedMeta.slice(6).toString('utf8').replace(/\0+$/, '');
 
       try {
         const metaJson = JSON.parse(metaStr);
-        if (metaJson.musicName) songName = metaJson.musicName;
-        if (metaJson.artist) {
-          if (Array.isArray(metaJson.artist)) {
-            artist = metaJson.artist
-              .map((a: any) => (Array.isArray(a) ? a[0] : a))
-              .filter(Boolean)
-              .join('/');
-          } else {
-            artist = metaJson.artist;
-          }
+        if (typeof metaJson.musicName === 'string') songName = metaJson.musicName;
+        if (Array.isArray(metaJson.artist)) {
+          artist = metaJson.artist
+            .map((a: any) => (Array.isArray(a) ? a[0] : a))
+            .filter((a: any) => typeof a === 'string')
+            .join('/');
+        } else if (typeof metaJson.artist === 'string') {
+          artist = metaJson.artist;
         }
-        // Reference uses "album" not "albumName"
-        if (metaJson.album) album = metaJson.album;
+        if (typeof metaJson.album === 'string') {
+          album = metaJson.album;
+        } else if (metaJson.album && typeof metaJson.album.name === 'string') {
+          album = metaJson.album.name;
+        }
+        if (typeof metaJson.format === 'string') metaFormat = metaJson.format.toLowerCase();
       } catch {
-        // Metadata might be corrupted
+        // 元数据损坏时忽略,使用文件名兜底
       }
+      report(0.12);
     } else {
-      // If no metadata, still need to advance past the 4-byte zero length
-      // (already read above)
+      offset += metaLen; // 理论上 metaLen<=0,防御性跳过
     }
 
-    // Step 11: Skip CRC32 + image version (5 bytes total)
+    // 4. CRC32(4 字节)+ 图片版本(1 字节)
     offset += 5;
 
-    // Step 12: Read cover image
+    // 5. 封面
     let cover: Buffer | undefined;
     let coverMime: string | undefined;
 
@@ -159,57 +185,47 @@ export async function parseNCM(filePath: string): Promise<NCMFileInfo> {
     offset += 4;
     const imageLen = imageLenBuf.readUInt32LE(0);
 
-    if (imageLen > 0) {
+    if (imageLen > 0 && imageLen < 64 * 1024 * 1024) {
       cover = Buffer.alloc(imageLen);
       fs.readSync(fd, cover, 0, imageLen, offset);
       offset += imageLen;
-
-      // Detect MIME type from magic bytes
-      if (cover[0] === 0x89 && cover[1] === 0x50) {
-        coverMime = 'image/png';
-      } else {
-        coverMime = 'image/jpeg';
-      }
+      coverMime = cover[0] === 0x89 && cover[1] === 0x50 ? 'image/png' : 'image/jpeg';
     }
-
-    // Seek past remaining cover frame data
     offset += coverFrameLen - imageLen;
+    report(0.15);
 
-    // Step 13: Read and decrypt audio data until EOF
-    const audioChunks: Buffer[] = [];
+    // 6. 音频数据:逐块读取并解密
     const chunkSize = 0x8000;
     const buffer = Buffer.alloc(chunkSize);
     const fileSize = fs.fstatSync(fd).size;
+    const audioStart = offset;
+    const totalAudio = Math.max(1, fileSize - audioStart);
+    const audioChunks: Buffer[] = [];
+    let readTotal = 0;
 
     while (offset < fileSize) {
-      const remaining = fileSize - offset;
-      const toRead = Math.min(chunkSize, remaining);
-
+      const toRead = Math.min(chunkSize, fileSize - offset);
       const bytesRead = fs.readSync(fd, buffer, 0, toRead, offset);
-      offset += bytesRead;
-
       if (bytesRead <= 0) break;
+      offset += bytesRead;
+      readTotal += bytesRead;
 
-      // Decrypt using key box - exact algorithm from reference
       const decrypted = Buffer.alloc(bytesRead);
       for (let i = 0; i < bytesRead; i++) {
         const j = (i + 1) & 0xff;
         decrypted[i] = buffer[i] ^ keyBox[(keyBox[j] + keyBox[(keyBox[j] + j) & 0xff]) & 0xff];
       }
-
       audioChunks.push(decrypted);
+      report(0.15 + 0.65 * (readTotal / totalAudio));
     }
 
     const audioData = Buffer.concat(audioChunks);
+    report(0.8);
 
-    // Detect format from first bytes
-    let format: 'mp3' | 'flac' | 'unknown' = 'unknown';
-    if (audioData.length >= 3 && audioData[0] === 0x49 && audioData[1] === 0x44 && audioData[2] === 0x33) {
-      format = 'mp3'; // ID3 header
-    } else if (audioData.length >= 4 && audioData[0] === 0x66 && audioData[1] === 0x4C && audioData[2] === 0x61 && audioData[3] === 0x43) {
-      format = 'flac'; // fLaC header
-    } else if (audioData.length >= 2 && audioData[0] === 0xff && (audioData[1] & 0xe0) === 0xe0) {
-      format = 'mp3'; // MPEG sync word
+    // 7. 格式探测:优先真实音频头,其次元数据里的 format 字段
+    let format = detectFormat(audioData);
+    if (format === 'unknown' && metaFormat && metaFormat in FORMAT_EXT && metaFormat !== 'unknown') {
+      format = metaFormat as AudioFormat;
     }
 
     return {
@@ -228,19 +244,48 @@ export async function parseNCM(filePath: string): Promise<NCMFileInfo> {
   }
 }
 
+function sanitizeName(name: string): string {
+  return name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/[. ]+$/g, '').trim();
+}
+
+/** 找到不冲突的输出路径(重名时自动追加序号) */
+function uniquePath(outputDir: string, fileName: string): string {
+  const ext = path.extname(fileName);
+  const base = fileName.slice(0, fileName.length - ext.length);
+  let candidate = path.join(outputDir, fileName);
+  let i = 2;
+  while (fs.existsSync(candidate)) {
+    candidate = path.join(outputDir, `${base} (${i})${ext}`);
+    i++;
+  }
+  return candidate;
+}
+
 export function saveAudioFile(info: NCMFileInfo, outputDir: string): string {
-  const ext = info.format === 'unknown' ? '.bin' : `.${info.format}`;
-  const safeName = `${info.artist} - ${info.songName}`.replace(/[<>:"/\\|?*]/g, '_');
-  const outputPath = path.join(outputDir, `${safeName}${ext}`);
+  fs.mkdirSync(outputDir, { recursive: true });
 
-  fs.writeFileSync(outputPath, info.audioData);
+  const ext = FORMAT_EXT[info.format];
+  const hasRealMeta = info.songName || info.artist;
 
-  if (info.cover) {
-    const coverExt = info.coverMime === 'image/png' ? '.png' : '.jpg';
-    const coverPath = path.join(outputDir, `${safeName}${coverExt}`);
-    fs.writeFileSync(coverPath, info.cover);
+  let base: string;
+  if (hasRealMeta) {
+    const title = sanitizeName(info.songName || path.basename(info.fileName, '.ncm'));
+    const who = info.artist ? sanitizeName(info.artist) : '';
+    base = who && info.songName ? `${who} - ${title}` : title;
+  } else {
+    base = sanitizeName(path.basename(info.fileName, '.ncm')) || 'untitled';
   }
 
+  const outputPath = uniquePath(outputDir, `${base}.${ext}`);
+  const withTags = embedTags(info.format, info.audioData, {
+    title: info.songName || undefined,
+    artist: info.artist || undefined,
+    album: info.album || undefined,
+    cover: info.cover,
+    coverMime: info.coverMime,
+  });
+
+  fs.writeFileSync(outputPath, withTags);
   return outputPath;
 }
 
@@ -249,12 +294,15 @@ export async function convertNCMFile(
   outputDir: string,
   onProgress: (progress: number) => void
 ): Promise<string> {
-  onProgress(0);
+  onProgress(2);
 
-  const info = await parseNCM(filePath);
-  onProgress(50);
+  const info = await parseNCM(filePath, (r) => onProgress(2 + Math.round(r * 78))); // 2..80
+  onProgress(82);
 
-  const outputPath = saveAudioFile(info, outputDir);
+  const outputPath = saveAudioFile(info, outputDir); // 82..92
+  onProgress(92);
+
+  fs.statSync(outputPath); // 确认落盘
   onProgress(100);
 
   return outputPath;

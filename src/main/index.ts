@@ -6,14 +6,14 @@ let mainWindow: BrowserWindow | null = null;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 680,
-    height: 520,
-    minWidth: 380,
-    minHeight: 400,
+    width: 860,
+    height: 620,
+    minWidth: 560,
+    minHeight: 440,
     title: 'NCM转换器',
     frame: false,
     titleBarStyle: 'hidden',
-    backgroundColor: '#1e1e1e',
+    backgroundColor: '#16171a',
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,

@@ -3,6 +3,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 contextBridge.exposeInMainWorld('electronAPI', {
   selectFiles: () => ipcRenderer.invoke('select-files'),
   selectFolder: () => ipcRenderer.invoke('select-folder'),
+  scanPaths: (paths: string[]) => ipcRenderer.invoke('scan-paths', paths),
   selectOutputDir: () => ipcRenderer.invoke('select-output-dir'),
   convertFiles: (files: string[], outputDir: string, concurrency: number) =>
     ipcRenderer.invoke('convert-files', files, outputDir, concurrency),
@@ -15,6 +16,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   onConvertProgress: (callback: (data: any) => void) => {
     ipcRenderer.on('convert-progress', (_event, data) => callback(data));
+  },
+  onConvertInfo: (callback: (data: any) => void) => {
+    ipcRenderer.on('convert-info', (_event, data) => callback(data));
   },
   onConvertComplete: (callback: (data: any) => void) => {
     ipcRenderer.on('convert-complete', (_event, data) => callback(data));
